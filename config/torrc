@@ -1,0 +1,4 @@
+ControlPort 9051
+CookieAuthentication 0
+__LeaveStreamsUnattached 1
+__DisablePredictedCircuits 1
