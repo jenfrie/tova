@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, Union, Tuple, List
+from typing import Optional, Union, Tuple, List, Dict
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -8,12 +8,13 @@ TITLE_ON = False
 
 matplotlib.rcParams.update({"font.size": 16,
                             "axes.prop_cycle": matplotlib.cycler(color=["#555c9d", "#ff8c78", "#842c61", "#e4cc27", "#51939a", "#316631"]),
-                            "figure.figsize": (6.5, 3.8)})
+                            "figure.figsize": (7.5, 3.0)})
 
 
-def hist(x: list, y: Union[list, dict], title: Optional[str] = None, xlabel: Optional[str] = None, ylabel: Optional[str] = None, overlay: bool = False, perc: bool = False, annotations: Optional[List[tuple]] = None, xlim: Optional[Tuple[float, float]] = None, ylim: Optional[Tuple[float, float]] = None, yscale: Optional[str] = None, width: Optional[float] = None, horizontal: bool = False):
+def hist(x: list, y: Union[list, dict], title: Optional[str] = None, xlabel: Optional[str] = None, ylabel: Optional[str] = None, overlay: bool = False, perc: bool = False, annotations: Optional[List[tuple]] = None, xlim: Optional[Tuple[float, float]] = None, ylim: Optional[Tuple[float, float]] = None, yscale: Optional[str] = None, width: Optional[float] = None, horizontal: bool = False, style: Optional[Dict[str, Tuple[str, str]]] = None):
     x_is_str = isinstance(x[0], str)
     x_is_dt = isinstance(x[0], datetime)
+    x_is_int = isinstance(x[0], int)
     y_is_dict = isinstance(y, dict)
     overlay = overlay or x_is_dt
     max_y = 0
@@ -31,11 +32,20 @@ def hist(x: list, y: Union[list, dict], title: Optional[str] = None, xlabel: Opt
                 legend = True
             max_y = max(y_val) if max(y_val) > max_y else max_y
             y_val = [100 * val / sum(y_val) for val in y_val] if perc else y_val
-            x_val = [ind for ind, _ in enumerate(x)] if overlay else ([ind + i * 0.5 * width for ind, _ in enumerate(x)] if x_is_str else [val + i * 0.5 * width for val in x])
-            if horizontal:
-                plt.barh(x_val, y_val, label=label, height=width)
+            x_val = (x if x_is_int else [ind for ind, _ in enumerate(x)]) if overlay else ([ind + i * 0.5 * width for ind, _ in enumerate(x)] if x_is_str else [val + i * 0.5 * width for val in x])
+
+            if style:
+                hatch, color = style[label]
+                if horizontal:
+                    plt.barh(x_val, y_val, label=label, height=width, hatch=hatch, color=color, edgecolor="white", linewidth=2)
+                else:
+                    plt.bar(x=x_val, height=y_val, label=label, width=width, hatch=hatch, color=color, edgecolor="white", linewidth=2)
             else:
-                plt.bar(x=x_val, height=y_val, label=label, width=width)
+                if horizontal:
+                    plt.barh(x_val, y_val, label=label, height=width)
+                else:
+                    plt.bar(x=x_val, height=y_val, label=label, width=width)
+
             i += 2
     else:
         y = list(y.values())[0] if y_is_dict else y
@@ -219,21 +229,28 @@ def scatter(x: list, y: Union[list, dict], title: Optional[str] = None, xlabel: 
     plt.close()
 
 
-def boxplot(data: dict, title: Optional[str] = None, xlabel: Optional[str] = None, ylabel: Optional[str] = None, show_outliers: bool = True, horizontal: bool = False):
+def boxplot(data: dict, title: Optional[str] = None, xlabel: Optional[str] = None, ylabel: Optional[str] = None, show_outliers: bool = True, horizontal: bool = False, logscale: bool = False):
+    plt.figure(figsize=(6.5, 2.5))
     plt.boxplot(list(data.values()), labels=list(data.keys()), medianprops=dict(color="#ff8c78"), showfliers=show_outliers, vert=not horizontal)
 
     if TITLE_ON:
         plt.title(title)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
+    if logscale:
+        if horizontal:
+            plt.xscale("log")
+        else:
+            plt.yscale("log")
     plt.grid(axis="y", color="gainsboro")
     plt.gca().set_axisbelow(True)
     plt.tight_layout()
     plt.savefig((title or "graph").lower().replace(" ", "_").replace("#", "n").replace("%", "prc") + ".pdf")
+    plt.savefig((title or "graph").lower().replace(" ", "_").replace("#", "n").replace("%", "prc") + ".png")
     plt.close()
 
 
-def line(x: list, y: Union[list, dict], title: Optional[str] = None, xlabel: Optional[str] = None, ylabel: Optional[str] = None, xlim: Optional[Tuple[float, float]] = None, ylim: Optional[Tuple[float, float]] = None, logscalex: bool = False, logscaley: bool = False, x_is_td: bool = False):
+def line(x: list, y: Union[list, dict], title: Optional[str] = None, xlabel: Optional[str] = None, ylabel: Optional[str] = None, xlim: Optional[Tuple[float, float]] = None, ylim: Optional[Tuple[float, float]] = None, logscalex: bool = False, logscaley: bool = False, x_is_td: bool = False, side_legend: bool = False,  style: Optional[Dict[str, Tuple[str, str]]] = None):
     x_is_str = isinstance(x[0], str)
     x_is_dt = isinstance(x[0], datetime)
     x_is_num = isinstance(x[0], int) or isinstance(x[0], float)
@@ -251,13 +268,18 @@ def line(x: list, y: Union[list, dict], title: Optional[str] = None, xlabel: Opt
                 legend = True
             max_y.append(max(v for v in y_val if v is not None))
             max_x.append(max(v for v in x_val if v is not None))
-            plt.plot(x_val, y_val, label=label)
+            if style:
+                linestyle, color = style[label]
+                plt.plot(x_val, y_val, label=label, linestyle=linestyle, color=color)
+            else:
+                plt.plot(x_val, y_val, label=label)
         max_y = max(max_y)
         max_x = max(max_x)
 
     else:
         y = list(y.values())[0] if y_is_dict else y
         max_y = max(v for v in y if v is not None)
+        max_x = max(v for v in x if v is not None)
         plt.plot(x, y)
 
     if TITLE_ON:
@@ -281,7 +303,10 @@ def line(x: list, y: Union[list, dict], title: Optional[str] = None, xlabel: Opt
         plt.xticks([locs[i] for i in range(len(locs)) if "−" not in labels[i]._text and "." not in labels[i]._text], [time_format(int(label._text)) for label in labels if "-" not in label._text and "." not in label._text], rotation=35, ha="right")
 
     if legend:
-        plt.legend()
+        if side_legend:
+            plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+        else:
+            plt.legend()
     plt.grid(axis="y", color="gainsboro")
     plt.gca().set_axisbelow(True)
     plt.tight_layout()

@@ -14,7 +14,7 @@ from stem.control import Controller
 from stem.descriptor.router_status_entry import RouterStatusEntry
 from stem.response.events import CircuitEvent
 
-from env import CIRCUIT_TTL, PREFIX_LEN, N_CIRCUITS, VAL_K, BUILD_TIMEOUT
+from env import CIRCUIT_TTL, PREFIX_LEN, N_CIRCUITS, VAL_K, BUILD_INTERVAL
 
 created = UltraDict({}, name="circuit_creation", buffer_size=8192, auto_unlink=True)
 subnets = set()
@@ -30,10 +30,10 @@ ctrl.authenticate()
 
 
 def renew_circuits(guards: List[RouterStatusEntry], exits: List[RouterStatusEntry]):
-    active = {circ.id for circ in ctrl.get_circuits()}
+    active = {circ.id for circ in ctrl.get_circuits() if circ.status == "BUILT"}
     expired = get_expired_circuits(active)
     to_build = max(0, min(N_CIRCUITS, N_CIRCUITS - len(active) + len(expired)))
-    log(expired=len(expired), to_build=to_build)
+    log(active=len(active), expired=len(expired), to_build=to_build)
 
     if to_build > 0:
         new_guards, new_exits = get_relays()
@@ -41,8 +41,7 @@ def renew_circuits(guards: List[RouterStatusEntry], exits: List[RouterStatusEntr
         exits = new_exits if new_exits else exits
         log(guards=len(guards), exits=len(exits))
 
-        built = build_circuits(guards, exits, n=to_build)
-        log(built=built)
+        build_circuits(guards, exits, n=to_build)
 
     if expired:
         closed = expire_circuits(expired)
@@ -92,7 +91,7 @@ def get_relays() -> Tuple[List[RouterStatusEntry], List[RouterStatusEntry]]:
     return [], []
 
 
-def build_circuits(guards: List[RouterStatusEntry], exits: List[RouterStatusEntry], n: int) -> int:
+def build_circuits(guards: List[RouterStatusEntry], exits: List[RouterStatusEntry], n: int):
     guard_weights = weight_guards(guards)
 
     paths = set()
@@ -105,13 +104,13 @@ def build_circuits(guards: List[RouterStatusEntry], exits: List[RouterStatusEntr
             subnets.add(subnet)
         exits.remove(exit)
 
-    circ_ids = [build_circuit(list(path))for path in paths]
-    return sum(1 for circ_id in circ_ids if int(circ_id) > 0)
+    for path in paths:
+        build_circuit(list(path))
 
 
 def build_circuit(path: List[str]) -> int:
     try:
-        circ_id = ctrl.new_circuit(path, await_build=True, timeout=BUILD_TIMEOUT)
+        circ_id = ctrl.new_circuit(path, await_build=False)
         created[circ_id] = time()
         return circ_id
     except (InvalidRequest, CircuitExtensionFailed, Timeout):
@@ -179,15 +178,13 @@ def main():
         sleep(2)
     log(guards=len(guards), exits=len(exits))
 
-    inital_built = 0
     for _ in range(0, N_CIRCUITS, VAL_K):
-        inital_built += build_circuits(guards, exits, VAL_K)
-        sleep(5)
-    log(built=inital_built)
+        build_circuits(guards, exits, VAL_K)
+        sleep(BUILD_INTERVAL)
 
     while True:
         guards, exits = renew_circuits(guards, exits)
-        sleep(5)
+        sleep(BUILD_INTERVAL)
 
 
 if __name__ == '__main__':
